@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -35,6 +36,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
 import kotlinx.coroutines.runBlocking
+import com.google.firebase.appcheck.FirebaseAppCheck
 
 private val Black = Color(0xFF000000)
 private val Panel = Color(0xFF111111)
@@ -65,6 +67,7 @@ private val models = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppCheckInitializer.initialize(this)
         window.statusBarColor = android.graphics.Color.BLACK
         window.navigationBarColor = android.graphics.Color.BLACK
         setContent { AnonAiUltraApp() }
@@ -404,6 +407,7 @@ private fun ModelsScreen(selected: String, onSelect: (String) -> Unit) {
 @Composable
 private fun SettingsScreen() {
     val context = LocalContext.current
+    var debugToken by remember { mutableStateOf("") }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -425,6 +429,19 @@ private fun SettingsScreen() {
                     color = Muted, fontSize = 13.sp, lineHeight = 19.sp
                 )
                 Text("Sağlayıcı: Gemini Developer API", color = White, fontSize = 12.sp)
+                OutlinedButton(
+                    onClick = {
+                        FirebaseAppCheck.getInstance().getAppCheckToken(false)
+                            .addOnSuccessListener { debugToken = it.token }
+                            .addOnFailureListener { debugToken = "Token alınamadı: ${it.message}" }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Debug tokenu al") }
+                if (debugToken.isNotBlank()) {
+                    SelectionContainer {
+                        Text(debugToken, color = Green, fontSize = 11.sp)
+                    }
+                }
                 Text("Ücretsiz kullanım kotası ve hız sınırları Google tarafından belirlenir.", color = Muted, fontSize = 11.sp)
             }
         }
