@@ -27,6 +27,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.net.UnknownHostException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.MutableData
+import com.google.firebase.database.Transaction
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.tasks.await
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
@@ -40,6 +50,14 @@ private val Green = Color(0xFF16B65B)
 private val White = Color(0xFFFFFFFF)
 private val Muted = Color(0xFF9A9A9A)
 private val Line = Color(0xFF292929)
+
+private const val DAILY_LIMIT = 30
+private const val DAILY_WINDOW_MS = 24L * 60L * 60L * 1000L
+
+private data class DailyQuota(val remaining: Int, val limit: Int)
+private class DailyLimitReachedException : Exception(
+    "Günlük 30 AI isteği hakkın doldu. İlk isteğinden 24 saat sonra kotan yenilenir."
+)
 
 private enum class Tab(val title: String, val glyph: String) {
     CHAT("Sohbet", "◉"), CODER("Coder", "</>"), MODELS("Modeller", "◇"), SETTINGS("Ayarlar", "⚙")
@@ -72,6 +90,26 @@ class MainActivity : ComponentActivity() {
 private fun AnonAiUltraApp() {
     var tab by remember { mutableStateOf(Tab.CHAT) }
     var chosenModel by remember { mutableStateOf(models.first().name) }
+    var dailyRemaining by remember { mutableIntStateOf(DAILY_LIMIT) }
+    var quotaLoaded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        try {
+            val auth = FirebaseAuth.getInstance()
+            val user = auth.currentUser ?: auth.signInAnonymously().await().user
+                ?: throw IllegalStateException("Anonim kullanıcı oturumu açılamadı.")
+            val snapshot = FirebaseDatabase.getInstance()
+                .getReference("dailyUsage").child(user.uid).get().await()
+            val windowStart = snapshot.child("windowStart").getValue(Long::class.java) ?: 0L
+            val count = snapshot.child("count").getValue(Long::class.java)?.toInt() ?: 0
+            dailyRemaining = if (windowStart > 0L && System.currentTimeMillis() - windowStart < DAILY_WINDOW_MS) {
+                (DAILY_LIMIT - count).coerceAtLeast(0)
+            } else DAILY_LIMIT
+            quotaLoaded = true
+        } catch (_: Exception) {
+            quotaLoaded = false
+        }
+    }
 
     MaterialTheme(colorScheme = darkColorScheme(
         primary = Red, secondary = Green, background = Black, surface = Panel,
@@ -98,10 +136,17 @@ private fun AnonAiUltraApp() {
             }
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).background(Black)) {
-                AppHeader()
+                AppHeader(dailyRemaining, quotaLoaded)
                 when (tab) {
-                    Tab.CHAT -> ChatScreen(chosenModel, onChoose = { chosenModel = it })
-                    Tab.CODER -> CoderScreen()
+                    Tab.CHAT -> ChatScreen(
+                        chosenModel, onChoose = { chosenModel = it },
+                        dailyRemaining = dailyRemaining,
+                        onQuotaUpdate = { remaining, _ -> dailyRemaining = remaining; quotaLoaded = true }
+                    )
+                    Tab.CODER -> CoderScreen(
+                        dailyRemaining = dailyRemaining,
+                        onQuotaUpdate = { remaining, _ -> dailyRemaining = remaining; quotaLoaded = true }
+                    )
                     Tab.MODELS -> ModelsScreen(chosenModel) {
                         chosenModel = it
                         tab = Tab.CHAT
@@ -114,7 +159,7 @@ private fun AnonAiUltraApp() {
 }
 
 @Composable
-private fun AppHeader() {
+private fun AppHeader(dailyRemaining: Int, quotaLoaded: Boolean) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -128,7 +173,10 @@ private fun AppHeader() {
             Text("ANON AI ULTRA", color = White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             Text("YOUR AI WORKSPACE", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
         }
-        Pill("FIREBASE AI", Green)
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Pill("FIREBASE AI", Green)
+            Text(if (quotaLoaded) "KOTA $dailyRemaining/$DAILY_LIMIT" else "KOTA --/$DAILY_LIMIT", color = Muted, fontSize = 9.sp)
+        }
     }
 }
 
@@ -154,9 +202,78 @@ private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
+private suspend fun reserveDailyQuota(uid: String): DailyQuota =
+    suspendCancellableCoroutine { continuation ->
+        val reference = FirebaseDatabase.getInstance()
+            .getReference("dailyUsage").child(uid)
+
+        reference.runTransaction(object : Transaction.Handler {
+            override fun doTransaction(currentData: MutableData): Transaction.Result {
+                val now = System.currentTimeMillis()
+                if (!currentData.exists()) {
+                    currentData.value = mapOf("count" to 1L, "windowStart" to now)
+                    return Transaction.success(currentData)
+                }
+
+                val windowStart = currentData.child("windowStart").getValue(Long::class.java) ?: now
+                val count = currentData.child("count").getValue(Long::class.java)?.toInt() ?: 0
+
+                if (now - windowStart >= DAILY_WINDOW_MS) {
+                    currentData.value = mapOf("count" to 1L, "windowStart" to now)
+                    return Transaction.success(currentData)
+                }
+
+                if (count >= DAILY_LIMIT) return Transaction.abort()
+
+                currentData.child("count").value = (count + 1).toLong()
+                return Transaction.success(currentData)
+            }
+
+            override fun onComplete(
+                error: DatabaseError?,
+                committed: Boolean,
+                snapshot: DataSnapshot?
+            ) {
+                if (!continuation.isActive) return
+
+                if (error != null) {
+                    continuation.resumeWithException(error.toException())
+                    return
+                }
+
+                val windowStart = snapshot?.child("windowStart")?.getValue(Long::class.java)
+                    ?: System.currentTimeMillis()
+                val count = snapshot?.child("count")?.getValue(Long::class.java)?.toInt() ?: 0
+
+                if (!committed) {
+                    if (count >= DAILY_LIMIT && System.currentTimeMillis() - windowStart < DAILY_WINDOW_MS) {
+                        continuation.resumeWithException(DailyLimitReachedException())
+                    } else {
+                        continuation.resumeWithException(
+                            IllegalStateException("Günlük kullanım sayacı güncellenemedi.")
+                        )
+                    }
+                    return
+                }
+
+                continuation.resume(
+                    DailyQuota(
+                        remaining = (DAILY_LIMIT - count).coerceAtLeast(0),
+                        limit = DAILY_LIMIT
+                    )
+                )
+            }
+        }, false)
+    }
+
 private fun runAiRequest(
-    context: android.content.Context, model: AiModel, systemPrompt: String,
-    history: List<Pair<String, String>>, onStart: () -> Unit, onFinish: (String) -> Unit
+    context: android.content.Context,
+    model: AiModel,
+    systemPrompt: String,
+    history: List<Pair<String, String>>,
+    onQuotaUpdate: (Int, Int) -> Unit,
+    onStart: () -> Unit,
+    onFinish: (String) -> Unit
 ) {
     onStart()
     Thread {
@@ -172,16 +289,29 @@ private fun runAiRequest(
                 append("Son mesaja Türkçe ve faydalı şekilde cevap ver.")
             }
             val response = runBlocking {
+                val auth = FirebaseAuth.getInstance()
+                val user = auth.currentUser ?: auth.signInAnonymously().await().user
+                    ?: throw IllegalStateException("Anonim kullanıcı oturumu açılamadı.")
+
+                val quota = reserveDailyQuota(user.uid)
+                Handler(Looper.getMainLooper()).post {
+                    onQuotaUpdate(quota.remaining, quota.limit)
+                }
+
                 Firebase.ai(backend = GenerativeBackend.googleAI())
                     .generativeModel(model.id)
                     .generateContent(prompt)
             }
             response.text?.takeIf { it.isNotBlank() } ?: "AI boş yanıt döndürdü."
+        } catch (e: DailyLimitReachedException) {
+            e.message ?: "Günlük AI kullanım hakkın doldu."
         } catch (e: Exception) {
             when {
                 e is UnknownHostException -> "İnternet bağlantısı kurulamadı."
                 e.message?.contains("App Check", ignoreCase = true) == true ->
                     "Firebase App Check doğrulaması gerekiyor. Debug token kaydı yapılmalı."
+                e.message?.contains("Permission denied", ignoreCase = true) == true ->
+                    "Günlük kota veritabanı erişimi reddedildi. Firebase Database Rules ve anonim oturum ayarlarını kontrol et."
                 else -> e.message ?: "Firebase AI isteği başarısız oldu."
             }
         }
@@ -190,7 +320,12 @@ private fun runAiRequest(
 }
 
 @Composable
-private fun ChatScreen(selectedModel: String, onChoose: (String) -> Unit) {
+private fun ChatScreen(
+    selectedModel: String,
+    onChoose: (String) -> Unit,
+    dailyRemaining: Int,
+    onQuotaUpdate: (Int, Int) -> Unit
+) {
     val context = LocalContext.current
     var prompt by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -215,6 +350,7 @@ private fun ChatScreen(selectedModel: String, onChoose: (String) -> Unit) {
                 }
                 Text("Tek uygulamada farklı yapay zekâlar.", color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                 Text("Aktif: ${model.name} • ${model.provider}", color = Muted, fontSize = 12.sp)
+        Text("Günlük kalan istek: $dailyRemaining/$DAILY_LIMIT", color = Green, fontSize = 11.sp)
             }
         }
         Heading("MODELİNİ SEÇ", "Aktif model: ${model.name}")
@@ -258,6 +394,7 @@ private fun ChatScreen(selectedModel: String, onChoose: (String) -> Unit) {
                     runAiRequest(context, model,
                         "Sen ANON AI ULTRA adlı uygulamanın Türkçe konuşan yardımcı asistanısın. Açık, doğru ve faydalı cevap ver.",
                         messages.toList(),
+                        onQuotaUpdate = onQuotaUpdate,
                         onStart = { loading = true },
                         onFinish = { answer -> messages.add("assistant" to answer); loading = false }
                     )
@@ -280,7 +417,10 @@ private fun ChatScreen(selectedModel: String, onChoose: (String) -> Unit) {
 }
 
 @Composable
-private fun CoderScreen() {
+private fun CoderScreen(
+    dailyRemaining: Int,
+    onQuotaUpdate: (Int, Int) -> Unit
+) {
     val context = LocalContext.current
     var prompt by remember { mutableStateOf("") }
     var language by remember { mutableStateOf("Kotlin") }
@@ -310,6 +450,7 @@ private fun CoderScreen() {
                 }
                 Text("Kod üretimi, açıklama, hata analizi ve örnek proje yardımı.",
                     color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
+                Text("Günlük kalan istek: $dailyRemaining/$DAILY_LIMIT", color = Green, fontSize = 11.sp)
             }
         }
         Heading("PROGRAMLAMA DİLİ", "Çalışma alanını seç")
@@ -335,6 +476,7 @@ private fun CoderScreen() {
                     runAiRequest(context, models.first(),
                         "Sen deneyimli bir yazılım geliştiricisisin. Kullanıcıya Türkçe cevap ver. Seçilen dil: $language. Kod istediğinde çalışan, eksiksiz kod blokları üret; varsayımları belirt ve hataları açıkla. İstek: $task",
                         listOf("user" to "Bu görevi $language dilinde gerçekleştir: $task"),
+                        onQuotaUpdate = onQuotaUpdate,
                         onStart = { loading = true },
                         onFinish = { result -> answer = result; loading = false }
                     )
