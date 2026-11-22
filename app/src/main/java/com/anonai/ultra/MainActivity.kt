@@ -203,7 +203,7 @@ private fun ChatScreen(selectedModel: String, onChoose: (String) -> Unit) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text("Yapay zekân hazır.", color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-            Text("Ücretsiz modellerle sohbet et.", color = Muted, fontSize = 14.sp)
+            Text("Gemini modelleriyle sohbet et.", color = Muted, fontSize = 14.sp)
         }
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF190A0D)),
             border = BorderStroke(1.dp, Red.copy(alpha = 0.4f)), shape = RoundedCornerShape(21.dp)) {
@@ -211,7 +211,7 @@ private fun ChatScreen(selectedModel: String, onChoose: (String) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("AI CHAT", color = Red, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                     Spacer(Modifier.weight(1f))
-                    Pill(if (loading) "YANITLANIYOR" else "ÜCRETSİZ MODEL", Green)
+                    Pill(if (loading) "YANITLANIYOR" else "GEMINI MODEL", Green)
                 }
                 Text("Tek uygulamada farklı yapay zekâlar.", color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                 Text("Aktif: ${model.name} • ${model.provider}", color = Muted, fontSize = 12.sp)
@@ -366,7 +366,7 @@ private fun ModelsScreen(selected: String, onSelect: (String) -> Unit) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text("AI MODELLERİ", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-            Text("Ücretsiz erişilebilen modeller arasından seç.", color = Muted, fontSize = 14.sp)
+            Text("Kullanılabilir Gemini modelleri arasından seç.", color = Muted, fontSize = 14.sp)
         }
         models.forEach { model ->
             Card(
@@ -441,7 +441,7 @@ private fun SettingsScreen() {
                 })
             }
         }
-        Text("Sürüm 1.3.0  •  Firebase AI Logic", color = Muted)
+        Text("Sürüm 1.3.1  •  Firebase AI Logic", color = Muted)
     }
 }
 
