@@ -210,7 +210,7 @@ private suspend fun reserveDailyQuota(uid: String): DailyQuota =
         reference.runTransaction(object : Transaction.Handler {
             override fun doTransaction(currentData: MutableData): Transaction.Result {
                 val now = System.currentTimeMillis()
-                if (!currentData.exists()) {
+                if (currentData.value == null) {
                     currentData.value = mapOf("count" to 1L, "windowStart" to now)
                     return Transaction.success(currentData)
                 }
