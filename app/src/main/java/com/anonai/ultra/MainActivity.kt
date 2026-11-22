@@ -31,6 +31,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.net.UnknownHostException
+import com.google.firebase.Firebase
+import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
+import kotlinx.coroutines.runBlocking
 
 private val Black = Color(0xFF000000)
 private val Panel = Color(0xFF111111)
@@ -54,10 +58,8 @@ private data class AiModel(
 )
 
 private val models = listOf(
-    AiModel("Gemini 2.5 Flash", "Gemini", "Sohbet ve kodlama", "Google Gemini hızlı model.", "gemini-2.5-flash"),
-    AiModel("Gemini 2.5 Flash Lite", "Gemini", "Hızlı sohbet", "Daha hafif Gemini modeli.", "gemini-2.5-flash-lite"),
-    AiModel("Llama 3.1 8B Instant", "Groq", "Hızlı sohbet", "Groq üzerinden hızlı yanıt.", "llama-3.1-8b-instant"),
-    AiModel("GPT OSS 20B", "Groq", "Genel amaçlı ve kod", "Groq API üzerinden açık model.", "openai/gpt-oss-20b")
+    AiModel("Gemini 3.5 Flash", "Firebase AI", "Sohbet ve kodlama", "Firebase üzerinden Google Gemini hızlı model.", "gemini-3.5-flash"),
+    AiModel("Gemini 3.5 Flash Lite", "Firebase AI", "Hızlı sohbet", "Daha hafif Gemini modeli.", "gemini-3.5-flash-lite")
 )
 
 class MainActivity : ComponentActivity() {
@@ -129,7 +131,7 @@ private fun AppHeader() {
             Text("ANON AI ULTRA", color = White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             Text("YOUR AI WORKSPACE", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
         }
-        Pill("AI ONLINE READY", Green)
+        Pill("FIREBASE AI", Green)
     }
 }
 
@@ -159,13 +161,33 @@ private fun runAiRequest(
     context: android.content.Context, model: AiModel, systemPrompt: String,
     history: List<Pair<String, String>>, onStart: () -> Unit, onFinish: (String) -> Unit
 ) {
-    val provider = model.provider.lowercase()
-    val key = SecureApiKeyStore.read(context, provider)
-    if (key.isNullOrBlank()) { onFinish("${model.provider} API anahtarı Ayarlar bölümünde eksik."); return }
     onStart()
     Thread {
-        val result = try { ProviderAiClient.ask(provider, key, model.id, systemPrompt, history).text }
-        catch (e: Exception) { if (e is UnknownHostException) "İnternet bağlantısı kurulamadı." else e.message ?: "Bilinmeyen API hatası." }
+        val result = try {
+            val prompt = buildString {
+                appendLine(systemPrompt)
+                appendLine()
+                appendLine("Sohbet geçmişi:")
+                history.forEach { (role, text) ->
+                    appendLine(if (role == "assistant") "Asistan: $text" else "Kullanıcı: $text")
+                }
+                appendLine()
+                append("Son mesaja Türkçe ve faydalı şekilde cevap ver.")
+            }
+            val response = runBlocking {
+                Firebase.ai(backend = GenerativeBackend.googleAI())
+                    .generativeModel(model.id)
+                    .generateContent(prompt)
+            }
+            response.text?.takeIf { it.isNotBlank() } ?: "AI boş yanıt döndürdü."
+        } catch (e: Exception) {
+            when {
+                e is UnknownHostException -> "İnternet bağlantısı kurulamadı."
+                e.message?.contains("App Check", ignoreCase = true) == true ->
+                    "Firebase App Check doğrulaması gerekiyor. Debug token kaydı yapılmalı."
+                else -> e.message ?: "Firebase AI isteği başarısız oldu."
+            }
+        }
         Handler(Looper.getMainLooper()).post { onFinish(result) }
     }.start()
 }
@@ -313,7 +335,7 @@ private fun CoderScreen() {
                 val task = prompt.trim()
                 if (task.isNotEmpty() && !loading) {
                     answer = ""
-                    runAiRequest(context, models.first { it.provider == "Groq" },
+                    runAiRequest(context, models.first(),
                         "Sen deneyimli bir yazılım geliştiricisisin. Kullanıcıya Türkçe cevap ver. Seçilen dil: $language. Kod istediğinde çalışan, eksiksiz kod blokları üret; varsayımları belirt ve hataları açıkla. İstek: $task",
                         listOf("user" to "Bu görevi $language dilinde gerçekleştir: $task"),
                         onStart = { loading = true },
@@ -381,34 +403,44 @@ private fun ModelsScreen(selected: String, onSelect: (String) -> Unit) {
 
 @Composable
 private fun SettingsScreen() {
-    val context = LocalContext.current
-    var gemini by remember { mutableStateOf(SecureApiKeyStore.read(context, "gemini").orEmpty()) }
-    var groq by remember { mutableStateOf(SecureApiKeyStore.read(context, "groq").orEmpty()) }
-    var geminiSaved by remember { mutableStateOf(gemini.isNotBlank()) }
-    var groqSaved by remember { mutableStateOf(groq.isNotBlank()) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text("AYARLAR", color = White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text("API anahtarlarını cihazında güvenle sakla.", color = Muted)
-        ProviderKeyCard("GOOGLE GEMINI", "Gemini API anahtarı", gemini, "AIza...", geminiSaved,
-            { gemini = it; geminiSaved = false },
-            { if (gemini.trim().startsWith("AIza")) { SecureApiKeyStore.save(context, "gemini", gemini); geminiSaved = true; Toast.makeText(context, "Gemini anahtarı kaydedildi.", Toast.LENGTH_SHORT).show() } else Toast.makeText(context, "Gemini anahtarını kontrol et.", Toast.LENGTH_SHORT).show() },
-            { SecureApiKeyStore.clear(context, "gemini"); gemini = ""; geminiSaved = false },
-            "https://aistudio.google.com/apikey", "aistudio.google.com/apikey")
-        ProviderKeyCard("GROQ", "Groq API anahtarı", groq, "gsk_...", groqSaved,
-            { groq = it; groqSaved = false },
-            { if (groq.trim().startsWith("gsk_")) { SecureApiKeyStore.save(context, "groq", groq); groqSaved = true; Toast.makeText(context, "Groq anahtarı kaydedildi.", Toast.LENGTH_SHORT).show() } else Toast.makeText(context, "Groq anahtarını kontrol et.", Toast.LENGTH_SHORT).show() },
-            { SecureApiKeyStore.clear(context, "groq"); groq = ""; groqSaved = false },
-            "https://console.groq.com/keys", "console.groq.com/keys")
-        Card(colors = CardDefaults.cardColors(containerColor = Panel), border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(20.dp)) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Line),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Pill("AKTİF", Green)
+                    Spacer(Modifier.width(9.dp))
+                    Text("Firebase AI Logic", color = White, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    "ANON AI ULTRA, Gemini modellerine Firebase üzerinden bağlanır. Kullanıcının API anahtarı girmesi gerekmez.",
+                    color = Muted, fontSize = 13.sp, lineHeight = 19.sp
+                )
+                Text("Sağlayıcı: Gemini Developer API", color = White, fontSize = 12.sp)
+                Text("Ücretsiz kullanım kotası ve hız sınırları Google tarafından belirlenir.", color = Muted, fontSize = 11.sp)
+            }
+        }
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Line),
+            shape = RoundedCornerShape(20.dp)
+        ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("SOSYAL MEDYA", color = Red, fontWeight = FontWeight.Bold)
                 Text("@anonymous.1797  •  TikTok", color = White, modifier = Modifier.clickable {
+                    val context = androidx.compose.ui.platform.LocalContext.current
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tiktok.com/@anonymous.1797")))
                 })
             }
         }
-        Text("Sürüm 1.2.0  •  Gemini + Groq", color = Muted)
-        Text("Anahtarlar Android Keystore ile cihazında şifrelenir. Ücretsiz kota ve model erişimi sağlayıcıya göre değişir.", color = Muted, fontSize = 12.sp)
+        Text("Sürüm 1.3.0  •  Firebase AI Logic", color = Muted)
     }
 }
 
