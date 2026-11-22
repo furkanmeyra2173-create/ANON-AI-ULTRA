@@ -285,7 +285,7 @@ private fun CoderScreen() {
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text("AI Coding Assistant", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                        Text("Model: Particle-1 / Flint", color = Muted, fontSize = 12.sp)
+                        Text("Model: Groq • Llama 3.1 8B Instant", color = Muted, fontSize = 12.sp)
                     }
                     Pill(if (loading) "ÇALIŞIYOR" else "READY", Green)
                 }
