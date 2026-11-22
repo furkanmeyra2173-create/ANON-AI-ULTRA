@@ -566,6 +566,12 @@ private fun SettingsScreen() {
                     "Geliştirme sürümünde App Check debug tokenu uygulama günlüklerinde (Logcat) görünür. Firebase Console > App Check bölümünde bu tokenı kaydet. Gerçek kullanıcılar için release sürümü Play Integrity kullanır.",
                     color = Muted, fontSize = 11.sp, lineHeight = 16.sp
                 )
+                Text(
+                    "Günlük uygulama limiti: kullanıcı başına 30 istek. Sohbet ve ANON CODER aynı kotayı paylaşır; 24 saatlik süre ilk istekte başlar.",
+                    color = Green, fontSize = 12.sp, lineHeight = 18.sp
+                )
+                Text("Kota Firebase Realtime Database güvenlik kurallarıyla sunucu tarafında denetlenir. Her yeni AI isteği bir hak kullanır.",
+                    color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
                 Text("Ücretsiz kullanım kotası ve hız sınırları Google tarafından belirlenir.", color = Muted, fontSize = 11.sp)
             }
         }
