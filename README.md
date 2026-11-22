@@ -2,20 +2,24 @@
 
 Kotlin + Jetpack Compose Android AI workspace.
 
-## First foundation release
+## Features
 
 - Black and red interface with green status accents
 - Chat, ANON CODER, Models, and Settings navigation
-- Model family catalogue and local model selection
+- Gemini and Groq provider integration
+- Model selection for Gemini 2.5 Flash, Gemini 2.5 Flash Lite, Groq Llama 3.1 8B Instant, and Groq GPT OSS 20B
+- Separate Gemini and Groq API key fields in Settings
+- API keys encrypted locally with Android Keystore (AES/GCM)
+- ANON CODER uses Groq Llama 3.1 8B Instant
 - TikTok link in Settings: https://www.tiktok.com/@anonymous.1797
-- GitHub Actions workflow that builds a debug APK
+- GitHub Actions workflow builds and uploads a debug APK
 
-## Current status
+## API keys
 
-This first commit provides the Android interface and build pipeline. AI providers are **not connected yet**. Chat and coding actions clearly report that no request is sent until a secure backend and provider credentials are configured.
+Add your own Gemini and/or Groq API key in the app's Settings screen. Keys are stored encrypted on the device. Do not commit API keys to the repository.
 
-Free model availability, rate limits, and terms depend on each provider. API keys must be stored on the backend, never inside the APK.
+Free model availability, rate limits, and provider terms can change. API requests are sent directly from the app to the selected provider.
 
 ## Build
 
-GitHub Actions builds `:app:assembleDebug` on pushes to `main` and on manual runs. Download the `ANON-AI-ULTRA-debug` artifact from a successful workflow run.
+GitHub Actions runs `:app:assembleDebug` on pushes to `main` and on manual runs. Download the `ANON-AI-ULTRA-debug` artifact from a successful workflow run.
