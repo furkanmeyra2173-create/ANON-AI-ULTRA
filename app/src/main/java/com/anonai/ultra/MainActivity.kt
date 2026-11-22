@@ -59,8 +59,8 @@ private data class AiModel(
 )
 
 private val models = listOf(
-    AiModel("Gemini 3.5 Flash", "Firebase AI", "Sohbet ve kodlama", "Firebase üzerinden Google Gemini hızlı model.", "gemini-3.5-flash"),
-    AiModel("Gemini 3.5 Flash Lite", "Firebase AI", "Hızlı sohbet", "Daha hafif Gemini modeli.", "gemini-3.5-flash-lite")
+    AiModel("Gemini 3.8 Flash", "Firebase AI", "Sohbet ve kodlama", "Firebase üzerinden güncel Google Gemini hızlı model.", "gemini-3.8-flash"),
+    AiModel("Gemini 3.5 Flash Lite", "Firebase AI", "Hızlı ve hafif sohbet", "Daha düşük maliyetli ve hızlı Gemini modeli.", "gemini-3.5-flash-lite")
 )
 
 class MainActivity : ComponentActivity() {
@@ -309,7 +309,7 @@ private fun CoderScreen() {
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text("AI Coding Assistant", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                        Text("Model: Groq • Llama 3.1 8B Instant", color = Muted, fontSize = 12.sp)
+                        Text("Model: Firebase AI • Gemini 3.8 Flash", color = Muted, fontSize = 12.sp)
                     }
                     Pill(if (loading) "ÇALIŞIYOR" else "READY", Green)
                 }
@@ -406,7 +406,6 @@ private fun ModelsScreen(selected: String, onSelect: (String) -> Unit) {
 @Composable
 private fun SettingsScreen() {
     val context = LocalContext.current
-    var debugToken by remember { mutableStateOf("") }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -428,17 +427,10 @@ private fun SettingsScreen() {
                     color = Muted, fontSize = 13.sp, lineHeight = 19.sp
                 )
                 Text("Sağlayıcı: Gemini Developer API", color = White, fontSize = 12.sp)
-                OutlinedButton(
-                    onClick = {
-                        AppCheckDebugToken.request { debugToken = it }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Debug tokenu al") }
-                if (debugToken.isNotBlank()) {
-                    SelectionContainer {
-                        Text(debugToken, color = Green, fontSize = 11.sp)
-                    }
-                }
+                Text(
+                    "Geliştirme sürümünde App Check debug tokenu uygulama günlüklerinde (Logcat) görünür. Firebase Console > App Check bölümünde bu tokenı kaydet. Gerçek kullanıcılar için release sürümü Play Integrity kullanır.",
+                    color = Muted, fontSize = 11.sp, lineHeight = 16.sp
+                )
                 Text("Ücretsiz kullanım kotası ve hız sınırları Google tarafından belirlenir.", color = Muted, fontSize = 11.sp)
             }
         }
