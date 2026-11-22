@@ -54,12 +54,10 @@ private data class AiModel(
 )
 
 private val models = listOf(
-    AiModel("Otomatik Ücretsiz", "OpenRouter", "Genel sohbet", "Uygun ücretsiz sohbet modelini otomatik seçer.", "openrouter/free"),
-    AiModel("Particle-1", "Particle AI", "Kodlama", "Kod üretme ve yazılım görevleri için ücretsiz model.", "particle-ai/particle-1:free"),
-    AiModel("Flint", "Recursive", "Kodlama ve analiz", "Kod tabanlarını inceleme, hata bulma ve test yazma.", "recursive/flint-v1.0:free"),
-    AiModel("Nemotron 3.5 Lightning", "NVIDIA", "Hızlı sohbet ve kod", "Hafif ve hızlı genel amaçlı model.", "nvidia/nemotron-3.5-lightning:free"),
-    AiModel("Gemma 4 26B", "Google", "Genel amaçlı", "Metin ve görsel anlayabilen açık model ailesi.", "google/gemma-4-26b-a4b:free"),
-    AiModel("Ling 3.2 Flash", "inclusionAI", "Akıl yürütme", "Uzun bağlamlı ve çok yönlü model.", "inclusionai/ling-3.2-flash:free")
+    AiModel("Gemini 2.5 Flash", "Gemini", "Sohbet ve kodlama", "Google Gemini hızlı model.", "gemini-2.5-flash"),
+    AiModel("Gemini 2.5 Flash Lite", "Gemini", "Hızlı sohbet", "Daha hafif Gemini modeli.", "gemini-2.5-flash-lite"),
+    AiModel("Llama 3.1 8B Instant", "Groq", "Hızlı sohbet", "Groq üzerinden hızlı yanıt.", "llama-3.1-8b-instant"),
+    AiModel("GPT OSS 20B", "Groq", "Genel amaçlı ve kod", "Groq API üzerinden açık model.", "openai/gpt-oss-20b")
 )
 
 class MainActivity : ComponentActivity() {
@@ -158,28 +156,16 @@ private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 private fun runAiRequest(
-    context: android.content.Context,
-    modelId: String,
-    systemPrompt: String,
-    history: List<Pair<String, String>>,
-    onStart: () -> Unit,
-    onFinish: (String) -> Unit
+    context: android.content.Context, model: AiModel, systemPrompt: String,
+    history: List<Pair<String, String>>, onStart: () -> Unit, onFinish: (String) -> Unit
 ) {
-    val apiKey = SecureApiKeyStore.read(context)
-    if (apiKey.isNullOrBlank()) {
-        onFinish("API anahtarı bulunamadı. Ayarlar bölümünden ücretsiz OpenRouter anahtarını ekle.")
-        return
-    }
+    val provider = model.provider.lowercase()
+    val key = SecureApiKeyStore.read(context, provider)
+    if (key.isNullOrBlank()) { onFinish("${model.provider} API anahtarı Ayarlar bölümünde eksik."); return }
     onStart()
     Thread {
-        val result = try {
-            OpenRouterClient.ask(apiKey, modelId, systemPrompt, history).text
-        } catch (e: Exception) {
-            when (e) {
-                is UnknownHostException -> "İnternet bağlantısı kurulamadı. Bağlantını kontrol et."
-                else -> e.message ?: "Bilinmeyen bir bağlantı hatası oluştu."
-            }
-        }
+        val result = try { ProviderAiClient.ask(provider, key, model.id, systemPrompt, history).text }
+        catch (e: Exception) { if (e is UnknownHostException) "İnternet bağlantısı kurulamadı." else e.message ?: "Bilinmeyen API hatası." }
         Handler(Looper.getMainLooper()).post { onFinish(result) }
     }.start()
 }
@@ -250,7 +236,7 @@ private fun ChatScreen(selectedModel: String, onChoose: (String) -> Unit) {
                 if (text.isNotEmpty() && !loading) {
                     messages.add("user" to text)
                     prompt = ""
-                    runAiRequest(context, model.id,
+                    runAiRequest(context, model,
                         "Sen ANON AI ULTRA adlı uygulamanın Türkçe konuşan yardımcı asistanısın. Açık, doğru ve faydalı cevap ver.",
                         messages.toList(),
                         onStart = { loading = true },
@@ -327,7 +313,7 @@ private fun CoderScreen() {
                 val task = prompt.trim()
                 if (task.isNotEmpty() && !loading) {
                     answer = ""
-                    runAiRequest(context, "particle-ai/particle-1:free",
+                    runAiRequest(context, models.first { it.provider == "Groq" },
                         "Sen deneyimli bir yazılım geliştiricisisin. Kullanıcıya Türkçe cevap ver. Seçilen dil: $language. Kod istediğinde çalışan, eksiksiz kod blokları üret; varsayımları belirt ve hataları açıkla. İstek: $task",
                         listOf("user" to "Bu görevi $language dilinde gerçekleştir: $task"),
                         onStart = { loading = true },
@@ -396,113 +382,58 @@ private fun ModelsScreen(selected: String, onSelect: (String) -> Unit) {
 @Composable
 private fun SettingsScreen() {
     val context = LocalContext.current
-    var apiKey by remember { mutableStateOf(SecureApiKeyStore.read(context).orEmpty()) }
-    var saved by remember { mutableStateOf(SecureApiKeyStore.read(context).isNullOrBlank().not()) }
+    var gemini by remember { mutableStateOf(SecureApiKeyStore.read(context, "gemini").orEmpty()) }
+    var groq by remember { mutableStateOf(SecureApiKeyStore.read(context, "groq").orEmpty()) }
+    var geminiSaved by remember { mutableStateOf(gemini.isNotBlank()) }
+    var groqSaved by remember { mutableStateOf(groq.isNotBlank()) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text("AYARLAR", color = White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text("API anahtarlarını cihazında güvenle sakla.", color = Muted)
+        ProviderKeyCard("GOOGLE GEMINI", "Gemini API anahtarı", gemini, "AIza...", geminiSaved,
+            { gemini = it; geminiSaved = false },
+            { if (gemini.trim().startsWith("AIza")) { SecureApiKeyStore.save(context, "gemini", gemini); geminiSaved = true; Toast.makeText(context, "Gemini anahtarı kaydedildi.", Toast.LENGTH_SHORT).show() } else Toast.makeText(context, "Gemini anahtarını kontrol et.", Toast.LENGTH_SHORT).show() },
+            { SecureApiKeyStore.clear(context, "gemini"); gemini = ""; geminiSaved = false },
+            "https://aistudio.google.com/apikey", "aistudio.google.com/apikey")
+        ProviderKeyCard("GROQ", "Groq API anahtarı", groq, "gsk_...", groqSaved,
+            { groq = it; groqSaved = false },
+            { if (groq.trim().startsWith("gsk_")) { SecureApiKeyStore.save(context, "groq", groq); groqSaved = true; Toast.makeText(context, "Groq anahtarı kaydedildi.", Toast.LENGTH_SHORT).show() } else Toast.makeText(context, "Groq anahtarını kontrol et.", Toast.LENGTH_SHORT).show() },
+            { SecureApiKeyStore.clear(context, "groq"); groq = ""; groqSaved = false },
+            "https://console.groq.com/keys", "console.groq.com/keys")
+        Card(colors = CardDefaults.cardColors(containerColor = Panel), border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(20.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("SOSYAL MEDYA", color = Red, fontWeight = FontWeight.Bold)
+                Text("@anonymous.1797  •  TikTok", color = White, modifier = Modifier.clickable {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tiktok.com/@anonymous.1797")))
+                })
+            }
+        }
+        Text("Sürüm 1.2.0  •  Gemini + Groq", color = Muted)
+        Text("Anahtarlar Android Keystore ile cihazında şifrelenir. Ücretsiz kota ve model erişimi sağlayıcıya göre değişir.", color = Muted, fontSize = 12.sp)
+    }
+}
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(15.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("AYARLAR", color = White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-            Text("Uygulamanı ve profil bağlantılarını yönet.", color = Muted, fontSize = 14.sp)
-        }
-        Card(colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("ÜCRETSİZ AI BAĞLANTISI", color = Red, fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                Text("OpenRouter API anahtarı", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text("Ücretsiz modelleri kullanmak için ücretsiz bir OpenRouter hesabı ve API anahtarı gerekir. Kredi satın almak zorunda değilsin; ücretsiz model kotası sınırlıdır.",
-                    color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it; saved = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("sk-or-v1-...", color = Muted) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Field, unfocusedContainerColor = Field,
-                        focusedBorderColor = Red, unfocusedBorderColor = Line,
-                        focusedTextColor = White, unfocusedTextColor = White, cursorColor = Red
-                    )
-                )
-                Button(
-                    onClick = {
-                        if (apiKey.trim().startsWith("sk-or-")) {
-                            SecureApiKeyStore.save(context, apiKey)
-                            saved = true
-                            Toast.makeText(context, "API anahtarı şifreli olarak kaydedildi.", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Geçerli bir OpenRouter anahtarı gir.", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Red)
-                ) { Text("API anahtarını kaydet", fontWeight = FontWeight.Bold) }
-                if (saved) Text("API anahtarı bu cihazda şifreli saklanıyor.", color = Green, fontSize = 11.sp)
-                TextButton(onClick = {
-                    SecureApiKeyStore.clear(context)
-                    apiKey = ""
-                    saved = false
-                    Toast.makeText(context, "API anahtarı silindi.", Toast.LENGTH_SHORT).show()
-                }) { Text("Anahtarı sil", color = Muted) }
-                Text("Anahtar oluşturmak için OpenRouter sitesini aç:", color = Muted, fontSize = 11.sp)
-                Text("openrouter.ai/keys", color = Red, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://openrouter.ai/keys")))
-                    })
+@Composable
+private fun ProviderKeyCard(
+    title: String, subtitle: String, value: String, placeholder: String, saved: Boolean,
+    onValue: (String) -> Unit, onSave: () -> Unit, onClear: () -> Unit, url: String, link: String
+) {
+    val context = LocalContext.current
+    Card(colors = CardDefaults.cardColors(containerColor = Panel), border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text(title, color = Red, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = White, fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(value = value, onValueChange = onValue, modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(placeholder, color = Muted) }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Field, unfocusedContainerColor = Field,
+                    focusedBorderColor = Red, unfocusedBorderColor = Line, focusedTextColor = White, unfocusedTextColor = White))
+            Button(onClick = onSave, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Red)) {
+                Text("Anahtarı kaydet")
             }
+            if (saved) Text("Bu cihazda şifreli kaydedildi.", color = Green, fontSize = 11.sp)
+            TextButton(onClick = onClear) { Text("Anahtarı sil", color = Muted) }
+            Text(link, color = Red, modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) })
         }
-        Card(colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("SOSYAL MEDYA", color = Red, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                Row(
-                    Modifier.fillMaxWidth().clickable {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tiktok.com/@anonymous.1797"))
-                        try { context.startActivity(intent) }
-                        catch (_: ActivityNotFoundException) {
-                            Toast.makeText(context, "TikTok bağlantısı açılamadı.", Toast.LENGTH_SHORT).show()
-                        }
-                    }.padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(Modifier.size(48.dp).background(Red.copy(alpha = 0.15f), CircleShape),
-                        contentAlignment = Alignment.Center) {
-                        Text("♪", color = Red, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.width(13.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("TikTok", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text("@anonymous.1797", color = Muted, fontSize = 13.sp)
-                        Text("Profili aç", color = Red, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Text("↗", color = Red, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-        Card(colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-                Text("ANON AI ULTRA", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                SettingLine("Sürüm", "1.1.0")
-                SettingLine("Tema", "Siyah / Kırmızı")
-                SettingLine("AI altyapısı", "OpenRouter • ücretsiz modeller")
-            }
-        }
-        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF190A0D)),
-            border = BorderStroke(1.dp, Red.copy(alpha = 0.3f)), shape = RoundedCornerShape(18.dp)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("GİZLİLİK VE GÜVENLİK", color = Red, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Text("Anahtar Android Keystore ile cihazında şifrelenerek saklanır. Bu, sunucu taraflı koruma kadar güçlü değildir; cihazına erişimi olan veya cihazı ele geçirilmiş biri anahtarı çıkarabilir. İleride anahtarları sunucu tarafına taşıyacağız.",
-                    color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
-            }
-        }
-        Spacer(Modifier.height(8.dp))
     }
 }
 
