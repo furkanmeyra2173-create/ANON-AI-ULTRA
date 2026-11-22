@@ -7,21 +7,36 @@ Kotlin + Jetpack Compose Android AI workspace.
 - Black and red interface with green status accents
 - Chat, ANON CODER, Models, and Settings navigation
 - Firebase AI Logic with Gemini Developer API
-- Gemini 3.8 Flash and Gemini 3.5 Flash-Lite model choices
+- Gemini model choices
 - No user-entered API key required
+- Anonymous Firebase Authentication for a stable app user ID
+- Shared daily AI quota for Chat and ANON CODER: 30 requests per user per rolling 24-hour window
+- Realtime Database transactions plus server-side security rules enforce the quota
 - App Check debug provider for development builds
 - Play Integrity provider for release builds
 - GitHub Actions workflow builds and uploads a debug APK
 
-## AI access and quotas
+## Daily usage limit setup
 
-The app calls Firebase AI Logic directly using the Firebase project configuration. Users do not enter a Gemini or Groq API key.
+The app uses Firebase Authentication anonymous accounts and Firebase Realtime Database. The quota is keyed by the authenticated Firebase UID. Chat and ANON CODER share the same counter. The 24-hour window starts with the user's first request and resets 24 hours later.
 
-Model availability, free-tier quotas, rate limits, and billing requirements are controlled by Google and can change. This app does not promise unlimited free usage. Protect the Firebase project with App Check and monitor usage in the Firebase console.
+1. In Firebase Console, open **Authentication > Sign-in method** and enable **Anonymous**.
+2. Open **Realtime Database** and create a database for project `ultra-ai-8e44d`.
+3. In the Realtime Database **Rules** tab, publish the rules from `database.rules.json`.
+4. Download a fresh `google-services.json` after creating the database, then replace `app/google-services.json` in this repository so the database URL is included.
+5. Build the app again with GitHub Actions.
+
+The rules allow each authenticated user to read only their own counter and only allow a valid increment up to 30. The app reserves one request before calling Gemini, so a failed Gemini attempt also uses one request.
+
+Anonymous UIDs persist with the app's local Firebase Auth state, but clearing app data or reinstalling may create a new anonymous UID. Stronger account identity and broader abuse prevention can be added later.
+
+## Pricing
+
+Firebase Realtime Database includes a no-cost Spark allowance (1 GB stored and 10 GB/month downloaded at the time this README was written). If the project exceeds Firebase's current no-cost limits, service availability may be restricted on Spark. Check the current Firebase pricing page before launch.
 
 ## App Check
 
-- Debug builds use the Firebase App Check debug provider. Obtain the debug secret from the device logs (Logcat) and register it under Firebase Console > App Check. Never publish this secret.
+- Debug builds use the Firebase App Check debug provider. Obtain the debug secret from device logs (Logcat) and register it under Firebase Console > App Check. Never publish this secret.
 - Release builds use Play Integrity. Configure the Android app's Play Integrity provider in Firebase Console before enforcing App Check.
 - Do not enable enforcement until the debug and release configurations have been verified.
 
