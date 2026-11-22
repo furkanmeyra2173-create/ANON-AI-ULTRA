@@ -243,6 +243,19 @@ private suspend fun reserveDailyQuota(uid: String): DailyQuota =
                 }
 
                 if (count >= DAILY_LIMIT) return Transaction.abort()
+
+                // Migrate quota records created by the previous two-field schema.
+                if (!currentData.hasChild("burstCount") ||
+                    !currentData.hasChild("burstWindowStart") ||
+                    !currentData.hasChild("lastRequestAt")
+                ) {
+                    currentData.child("count").value = (count + 1).toLong()
+                    currentData.child("burstCount").value = 1L
+                    currentData.child("burstWindowStart").value = now
+                    currentData.child("lastRequestAt").value = now
+                    return Transaction.success(currentData)
+                }
+
                 if (lastRequestAt > 0L && now - lastRequestAt < MIN_REQUEST_INTERVAL_MS) {
                     return Transaction.abort()
                 }
