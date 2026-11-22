@@ -1,11 +1,10 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 android {
     namespace = "com.anonai.ultra"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "com.anonai.ultra"
         minSdk = 26
