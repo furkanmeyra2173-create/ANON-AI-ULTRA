@@ -11,7 +11,7 @@ Kotlin + Jetpack Compose Android AI workspace.
 - No user-entered API key required
 - Anonymous Firebase Authentication for a stable app user ID
 - Shared daily AI quota for Chat and ANON CODER: 30 requests per user per rolling 24-hour window
-- Realtime Database transactions plus server-side security rules enforce the quota
+- Realtime Database transactions plus server-side security rules enforce the quota, a 10-requests-per-5-minute burst cap, and a 2-second minimum interval
 - App Check debug provider for development builds
 - Play Integrity provider for release builds
 - GitHub Actions workflow builds and uploads a debug APK
@@ -26,9 +26,9 @@ The app uses Firebase Authentication anonymous accounts and Firebase Realtime Da
 4. Download a fresh `google-services.json` after creating the database, then replace `app/google-services.json` in this repository so the database URL is included.
 5. Build the app again with GitHub Actions.
 
-The rules allow each authenticated user to read only their own counter and only allow a valid increment up to 30. The app reserves one request before calling Gemini, so a failed Gemini attempt also uses one request.
+The rules allow each authenticated user to read only their own counter and validate every increment on the database server. They enforce a maximum of 30 requests per rolling 24 hours, at most 10 requests in any 5-minute usage window, and at least 2 seconds between accepted requests. The app reserves one request before calling Gemini, so a failed Gemini attempt also uses one request.
 
-Anonymous UIDs persist with the app's local Firebase Auth state, but clearing app data or reinstalling may create a new anonymous UID. Stronger account identity and broader abuse prevention can be added later.
+Anonymous UIDs persist with the app's local Firebase Auth state, but clearing app data or reinstalling may create a new anonymous UID. App Check with Play Integrity should be configured and enforced for Realtime Database and Firebase AI Logic before public release; it helps reject requests that do not come from a genuine app/device. App Check is not a complete identity system, and anonymous-account rotation cannot be fully prevented without linking users to a verified sign-in provider. Do not claim these controls eliminate all abuse.
 
 ## Pricing
 
