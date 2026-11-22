@@ -26,9 +26,9 @@ The app uses Firebase Authentication anonymous accounts and Firebase Realtime Da
 4. Download a fresh `google-services.json` after creating the database, then replace `app/google-services.json` in this repository so the database URL is included.
 5. Build the app again with GitHub Actions.
 
-The rules allow each authenticated user to read only their own counter and validate every increment on the database server. They enforce a maximum of 30 requests per rolling 24 hours, at most 10 requests in any 5-minute usage window, and at least 2 seconds between accepted requests. The app reserves one request before calling Gemini, so a failed Gemini attempt also uses one request.
+The rules allow each authenticated user to read only their own counter and validate every increment on the database server. They enforce a maximum of 30 requests per rolling 24 hours, at most 10 requests in each 5-minute usage window (the window starts with its first accepted request), and at least 2 seconds between accepted requests. The app reserves one request before calling Gemini, so a failed Gemini attempt also uses one request.
 
-Anonymous UIDs persist with the app's local Firebase Auth state, but clearing app data or reinstalling may create a new anonymous UID. App Check with Play Integrity should be configured and enforced for Realtime Database and Firebase AI Logic before public release; it helps reject requests that do not come from a genuine app/device. App Check is not a complete identity system, and anonymous-account rotation cannot be fully prevented without linking users to a verified sign-in provider. Do not claim these controls eliminate all abuse.
+Anonymous UIDs persist with the app's local Firebase Auth state, but clearing app data or reinstalling may create a new anonymous UID. App Check with Play Integrity should be configured for the Android release app, then enforcement should be enabled for Realtime Database and Firebase AI Logic before public release. Register the debug token before testing an enforced debug build. App Check helps reject requests that do not come from a genuine app/device. App Check is not a complete identity system, and anonymous-account rotation cannot be fully prevented without linking users to a verified sign-in provider. Do not claim these controls eliminate all abuse.
 
 ## Pricing
 
