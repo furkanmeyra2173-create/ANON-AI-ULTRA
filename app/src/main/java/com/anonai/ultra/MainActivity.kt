@@ -53,11 +53,15 @@ private val Line = Color(0xFF292929)
 
 private const val DAILY_LIMIT = 30
 private const val DAILY_WINDOW_MS = 24L * 60L * 60L * 1000L
+private const val BURST_LIMIT = 10
+private const val BURST_WINDOW_MS = 5L * 60L * 1000L
+private const val MIN_REQUEST_INTERVAL_MS = 2_000L
 
 private data class DailyQuota(val remaining: Int, val limit: Int)
 private class DailyLimitReachedException : Exception(
     "Günlük 30 AI isteği hakkın doldu. İlk isteğinden 24 saat sonra kotan yenilenir."
 )
+private class AbuseRateLimitException(message: String) : Exception(message)
 
 private enum class Tab(val title: String, val glyph: String) {
     CHAT("Sohbet", "◉"), CODER("Coder", "</>"), MODELS("Modeller", "◇"), SETTINGS("Ayarlar", "⚙")
@@ -211,21 +215,49 @@ private suspend fun reserveDailyQuota(uid: String): DailyQuota =
             override fun doTransaction(currentData: MutableData): Transaction.Result {
                 val now = System.currentTimeMillis()
                 if (currentData.value == null) {
-                    currentData.value = mapOf("count" to 1L, "windowStart" to now)
+                    currentData.value = mapOf(
+                        "count" to 1L,
+                        "windowStart" to now,
+                        "burstCount" to 1L,
+                        "burstWindowStart" to now,
+                        "lastRequestAt" to now
+                    )
                     return Transaction.success(currentData)
                 }
 
                 val windowStart = currentData.child("windowStart").getValue(Long::class.java) ?: now
                 val count = currentData.child("count").getValue(Long::class.java)?.toInt() ?: 0
+                val burstWindowStart = currentData.child("burstWindowStart").getValue(Long::class.java) ?: now
+                val burstCount = currentData.child("burstCount").getValue(Long::class.java)?.toInt() ?: 0
+                val lastRequestAt = currentData.child("lastRequestAt").getValue(Long::class.java) ?: 0L
 
                 if (now - windowStart >= DAILY_WINDOW_MS) {
-                    currentData.value = mapOf("count" to 1L, "windowStart" to now)
+                    currentData.value = mapOf(
+                        "count" to 1L,
+                        "windowStart" to now,
+                        "burstCount" to 1L,
+                        "burstWindowStart" to now,
+                        "lastRequestAt" to now
+                    )
                     return Transaction.success(currentData)
                 }
 
                 if (count >= DAILY_LIMIT) return Transaction.abort()
+                if (lastRequestAt > 0L && now - lastRequestAt < MIN_REQUEST_INTERVAL_MS) {
+                    return Transaction.abort()
+                }
+
+                val burstExpired = now - burstWindowStart >= BURST_WINDOW_MS
+                if (!burstExpired && burstCount >= BURST_LIMIT) return Transaction.abort()
 
                 currentData.child("count").value = (count + 1).toLong()
+                currentData.child("lastRequestAt").value = now
+                if (burstExpired) {
+                    currentData.child("burstCount").value = 1L
+                    currentData.child("burstWindowStart").value = now
+                } else {
+                    currentData.child("burstCount").value = (burstCount + 1).toLong()
+                }
                 return Transaction.success(currentData)
             }
 
@@ -241,18 +273,24 @@ private suspend fun reserveDailyQuota(uid: String): DailyQuota =
                     return
                 }
 
-                val windowStart = snapshot?.child("windowStart")?.getValue(Long::class.java)
-                    ?: System.currentTimeMillis()
+                val now = System.currentTimeMillis()
+                val windowStart = snapshot?.child("windowStart")?.getValue(Long::class.java) ?: now
                 val count = snapshot?.child("count")?.getValue(Long::class.java)?.toInt() ?: 0
+                val burstStart = snapshot?.child("burstWindowStart")?.getValue(Long::class.java) ?: now
+                val burstCount = snapshot?.child("burstCount")?.getValue(Long::class.java)?.toInt() ?: 0
+                val lastRequestAt = snapshot?.child("lastRequestAt")?.getValue(Long::class.java) ?: 0L
 
                 if (!committed) {
-                    if (count >= DAILY_LIMIT && System.currentTimeMillis() - windowStart < DAILY_WINDOW_MS) {
-                        continuation.resumeWithException(DailyLimitReachedException())
-                    } else {
-                        continuation.resumeWithException(
-                            IllegalStateException("Günlük kullanım sayacı güncellenemedi.")
-                        )
+                    val failure = when {
+                        count >= DAILY_LIMIT && now - windowStart < DAILY_WINDOW_MS ->
+                            DailyLimitReachedException()
+                        burstCount >= BURST_LIMIT && now - burstStart < BURST_WINDOW_MS ->
+                            AbuseRateLimitException("Çok hızlı istek gönderildi. 5 dakika içinde en fazla 10 AI isteği yapılabilir.")
+                        lastRequestAt > 0L && now - lastRequestAt < MIN_REQUEST_INTERVAL_MS ->
+                            AbuseRateLimitException("Yeni istek göndermeden önce 2 saniye bekle.")
+                        else -> IllegalStateException("Kota veya hız sınırı güvenlik kontrolü isteği reddetti.")
                     }
+                    continuation.resumeWithException(failure)
                     return
                 }
 
@@ -304,6 +342,8 @@ private fun runAiRequest(
             response.text?.takeIf { it.isNotBlank() } ?: "AI boş yanıt döndürdü."
         } catch (e: DailyLimitReachedException) {
             e.message ?: "Günlük AI kullanım hakkın doldu."
+        } catch (e: AbuseRateLimitException) {
+            e.message ?: "İstek hız sınırına ulaşıldı."
         } catch (e: Exception) {
             when {
                 e is UnknownHostException -> "İnternet bağlantısı kurulamadı."
@@ -570,7 +610,7 @@ private fun SettingsScreen() {
                     "Günlük uygulama limiti: kullanıcı başına 30 istek. Sohbet ve ANON CODER aynı kotayı paylaşır; 24 saatlik süre ilk istekte başlar.",
                     color = Green, fontSize = 12.sp, lineHeight = 18.sp
                 )
-                Text("Kota Firebase Realtime Database güvenlik kurallarıyla sunucu tarafında denetlenir. Her yeni AI isteği bir hak kullanır.",
+                Text("Kota Firebase Realtime Database güvenlik kurallarıyla denetlenir. Ayrıca 5 dakikada en fazla 10 istek ve istekler arasında en az 2 saniye vardır. App Check / Play Integrity, uygulama dışı otomatik istekleri azaltmaya yardımcı olur.",
                     color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
                 Text("Ücretsiz kullanım kotası ve hız sınırları Google tarafından belirlenir.", color = Muted, fontSize = 11.sp)
             }
