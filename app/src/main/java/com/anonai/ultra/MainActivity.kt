@@ -1,12 +1,10 @@
 package com.anonai.ultra
 
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
@@ -18,16 +16,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -451,42 +446,9 @@ private fun SettingsScreen() {
 }
 
 @Composable
-private fun ProviderKeyCard(
-    title: String, subtitle: String, value: String, placeholder: String, saved: Boolean,
-    onValue: (String) -> Unit, onSave: () -> Unit, onClear: () -> Unit, url: String, link: String
-) {
-    val context = LocalContext.current
-    Card(colors = CardDefaults.cardColors(containerColor = Panel), border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text(title, color = Red, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = White, fontWeight = FontWeight.SemiBold)
-            OutlinedTextField(value = value, onValueChange = onValue, modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(placeholder, color = Muted) }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Field, unfocusedContainerColor = Field,
-                    focusedBorderColor = Red, unfocusedBorderColor = Line, focusedTextColor = White, unfocusedTextColor = White))
-            Button(onClick = onSave, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Red)) {
-                Text("Anahtarı kaydet")
-            }
-            if (saved) Text("Bu cihazda şifreli kaydedildi.", color = Green, fontSize = 11.sp)
-            TextButton(onClick = onClear) { Text("Anahtarı sil", color = Muted) }
-            Text(link, color = Red, modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) })
-        }
-    }
-}
-
-@Composable
 private fun Heading(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(title, color = White, fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 0.8.sp)
         Text(subtitle, color = Muted, fontSize = 11.sp)
-    }
-}
-
-@Composable
-private fun SettingLine(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Muted, fontSize = 13.sp)
-        Text(value, color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
