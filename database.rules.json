@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "dailyUsage": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid && newData.hasChildren(['count', 'windowStart']) && newData.numChildren() === 2 && newData.child('count').isNumber() && newData.child('windowStart').isNumber() && ((!data.exists() && newData.child('count').val() === 1 && newData.child('windowStart').val() >= now - 300000 && newData.child('windowStart').val() <= now + 30000) || (data.exists() && ((now - data.child('windowStart').val() >= 86400000 && newData.child('count').val() === 1 && newData.child('windowStart').val() >= now - 300000 && newData.child('windowStart').val() <= now + 30000) || (now - data.child('windowStart').val() < 86400000 && newData.child('windowStart').val() === data.child('windowStart').val() && newData.child('count').val() === data.child('count').val() + 1 && newData.child('count').val() <= 30)))"
+      }
+    }
+  }
+}
