@@ -36,7 +36,6 @@ import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
 import kotlinx.coroutines.runBlocking
-import com.google.firebase.appcheck.FirebaseAppCheck
 
 private val Black = Color(0xFF000000)
 private val Panel = Color(0xFF111111)
@@ -431,9 +430,7 @@ private fun SettingsScreen() {
                 Text("Sağlayıcı: Gemini Developer API", color = White, fontSize = 12.sp)
                 OutlinedButton(
                     onClick = {
-                        FirebaseAppCheck.getInstance().getAppCheckToken(false)
-                            .addOnSuccessListener { debugToken = it.token }
-                            .addOnFailureListener { debugToken = "Token alınamadı: ${it.message}" }
+                        AppCheckDebugToken.request { debugToken = it }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Debug tokenu al") }
