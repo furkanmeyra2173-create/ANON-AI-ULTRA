@@ -1,5 +1,4 @@
 package com.anonai.ultra
-
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -9,67 +8,35 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/**
- * Encrypts the provider key with an Android Keystore AES key.
- * The API key is never written to source code or the APK assets.
- */
 object SecureApiKeyStore {
-    private const val PREFS = "anon_ai_secure"
-    private const val KEY_NAME = "anon_ai_openrouter_key"
-    private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-
-    private fun secretKey(): SecretKey {
-        val store = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        val existing = store.getKey(KEY_NAME, null) as? SecretKey
-        if (existing != null) return existing
-
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-        generator.init(
-            KeyGenParameterSpec.Builder(
-                KEY_NAME,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setRandomizedEncryptionRequired(true)
-                .build()
-        )
-        return generator.generateKey()
-    }
-
-    fun save(context: android.content.Context, value: String) {
-        val clean = value.trim()
-        if (clean.isEmpty()) {
-            clear(context)
-            return
-        }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-        val encrypted = cipher.doFinal(clean.toByteArray(Charsets.UTF_8))
-        val payload = cipher.iv + encrypted
-        val encoded = Base64.encodeToString(payload, Base64.NO_WRAP)
-        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-            .edit().putString(KEY_NAME, encoded).apply()
-    }
-
-    fun read(context: android.content.Context): String? {
-        val encoded = context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-            .getString(KEY_NAME, null) ?: return null
-        return try {
-            val payload = Base64.decode(encoded, Base64.NO_WRAP)
-            require(payload.size > 12)
-            val iv = payload.copyOfRange(0, 12)
-            val encrypted = payload.copyOfRange(12, payload.size)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
-            String(cipher.doFinal(encrypted), Charsets.UTF_8)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    fun clear(context: android.content.Context) {
-        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-            .edit().remove(KEY_NAME).apply()
-    }
+ private const val PREFS="anon_ai_secure"
+ private fun secretKey(alias:String):SecretKey {
+  val ks=KeyStore.getInstance("AndroidKeyStore").apply{load(null)}
+  (ks.getKey(alias,null) as? SecretKey)?.let{return it}
+  val gen=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore")
+  gen.init(KeyGenParameterSpec.Builder(alias,KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+   .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+   .setRandomizedEncryptionRequired(true).build())
+  return gen.generateKey()
+ }
+ fun save(c:android.content.Context,provider:String,value:String){
+  val alias="anon_ai_${provider}_key"; val clean=value.trim()
+  if(clean.isEmpty()){clear(c,provider);return}
+  val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,secretKey(alias))
+  val bytes=cipher.iv+cipher.doFinal(clean.toByteArray(Charsets.UTF_8))
+  c.getSharedPreferences(PREFS,0).edit().putString(alias,Base64.encodeToString(bytes,Base64.NO_WRAP)).apply()
+ }
+ fun read(c:android.content.Context,provider:String):String?{
+  val alias="anon_ai_${provider}_key"
+  val encoded=c.getSharedPreferences(PREFS,0).getString(alias,null)?:return null
+  return try{
+   val bytes=Base64.decode(encoded,Base64.NO_WRAP);require(bytes.size>12)
+   val cipher=Cipher.getInstance("AES/GCM/NoPadding")
+   cipher.init(Cipher.DECRYPT_MODE,secretKey(alias),GCMParameterSpec(128,bytes.copyOfRange(0,12)))
+   String(cipher.doFinal(bytes.copyOfRange(12,bytes.size)),Charsets.UTF_8)
+  }catch(_:Exception){null}
+ }
+ fun clear(c:android.content.Context,provider:String){
+  val alias="anon_ai_${provider}_key";c.getSharedPreferences(PREFS,0).edit().remove(alias).apply()
+ }
 }
