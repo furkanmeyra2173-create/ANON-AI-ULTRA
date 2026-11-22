@@ -267,7 +267,6 @@ private suspend fun reserveDailyQuota(uid: String): DailyQuota =
     }
 
 private fun runAiRequest(
-    context: android.content.Context,
     model: AiModel,
     systemPrompt: String,
     history: List<Pair<String, String>>,
@@ -326,7 +325,6 @@ private fun ChatScreen(
     dailyRemaining: Int,
     onQuotaUpdate: (Int, Int) -> Unit
 ) {
-    val context = LocalContext.current
     var prompt by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     val messages = remember { mutableStateListOf<Pair<String, String>>() }
@@ -391,7 +389,7 @@ private fun ChatScreen(
                 if (text.isNotEmpty() && !loading) {
                     messages.add("user" to text)
                     prompt = ""
-                    runAiRequest(context, model,
+                    runAiRequest(model,
                         "Sen ANON AI ULTRA adlı uygulamanın Türkçe konuşan yardımcı asistanısın. Açık, doğru ve faydalı cevap ver.",
                         messages.toList(),
                         onQuotaUpdate = onQuotaUpdate,
@@ -473,7 +471,7 @@ private fun CoderScreen(
                 val task = prompt.trim()
                 if (task.isNotEmpty() && !loading) {
                     answer = ""
-                    runAiRequest(context, models.first(),
+                    runAiRequest(models.first(),
                         "Sen deneyimli bir yazılım geliştiricisisin. Kullanıcıya Türkçe cevap ver. Seçilen dil: $language. Kod istediğinde çalışan, eksiksiz kod blokları üret; varsayımları belirt ve hataları açıkla. İstek: $task",
                         listOf("user" to "Bu görevi $language dilinde gerçekleştir: $task"),
                         onQuotaUpdate = onQuotaUpdate,
