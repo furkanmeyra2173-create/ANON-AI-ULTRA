@@ -6,19 +6,24 @@ Kotlin + Jetpack Compose Android AI workspace.
 
 - Black and red interface with green status accents
 - Chat, ANON CODER, Models, and Settings navigation
-- Gemini and Groq provider integration
-- Model selection for Gemini 2.5 Flash, Gemini 2.5 Flash Lite, Groq Llama 3.1 8B Instant, and Groq GPT OSS 20B
-- Separate Gemini and Groq API key fields in Settings
-- API keys encrypted locally with Android Keystore (AES/GCM)
-- ANON CODER uses Groq Llama 3.1 8B Instant
-- TikTok link in Settings: https://www.tiktok.com/@anonymous.1797
+- Firebase AI Logic with Gemini Developer API
+- Gemini 3.8 Flash and Gemini 3.5 Flash-Lite model choices
+- No user-entered API key required
+- App Check debug provider for development builds
+- Play Integrity provider for release builds
 - GitHub Actions workflow builds and uploads a debug APK
 
-## API keys
+## AI access and quotas
 
-Add your own Gemini and/or Groq API key in the app's Settings screen. Keys are stored encrypted on the device. Do not commit API keys to the repository.
+The app calls Firebase AI Logic directly using the Firebase project configuration. Users do not enter a Gemini or Groq API key.
 
-Free model availability, rate limits, and provider terms can change. API requests are sent directly from the app to the selected provider.
+Model availability, free-tier quotas, rate limits, and billing requirements are controlled by Google and can change. This app does not promise unlimited free usage. Protect the Firebase project with App Check and monitor usage in the Firebase console.
+
+## App Check
+
+- Debug builds use the Firebase App Check debug provider. Obtain the debug secret from the device logs (Logcat) and register it under Firebase Console > App Check. Never publish this secret.
+- Release builds use Play Integrity. Configure the Android app's Play Integrity provider in Firebase Console before enforcing App Check.
+- Do not enable enforcement until the debug and release configurations have been verified.
 
 ## Build
 
