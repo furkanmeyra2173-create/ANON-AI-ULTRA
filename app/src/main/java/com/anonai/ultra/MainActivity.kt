@@ -403,6 +403,7 @@ private fun ModelsScreen(selected: String, onSelect: (String) -> Unit) {
 
 @Composable
 private fun SettingsScreen() {
+    val context = LocalContext.current
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -435,7 +436,6 @@ private fun SettingsScreen() {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("SOSYAL MEDYA", color = Red, fontWeight = FontWeight.Bold)
                 Text("@anonymous.1797  •  TikTok", color = White, modifier = Modifier.clickable {
-                    val context = androidx.compose.ui.platform.LocalContext.current
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tiktok.com/@anonymous.1797")))
                 })
             }
