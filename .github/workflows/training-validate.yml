@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Check Python syntax
-        run: python -m py_compile training/train_from_scratch.py
+        run: python -m py_compile training/train_from_scratch.py training/finetune_instructions.py training/test_chat_model.py
       - name: Validate Kaggle notebook JSON
         run: python -m json.tool training/ANON_AI_ULTRA_Kaggle.ipynb > /dev/null
       - name: Check required training artifacts
