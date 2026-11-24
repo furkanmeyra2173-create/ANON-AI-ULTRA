@@ -17,17 +17,22 @@ Build an ANON-owned Turkish causal language model with randomly initialized weig
 
 Large language models require enormous amounts of text and GPU time. A public Turkish 473M-parameter scratch model reports about 14.9B training tokens. A free notebook GPU is useful for proving the pipeline, not reproducing that scale. The initial 30–35M model will likely be weak and may produce repetitive or nonsensical answers. Do not publish it as a finished assistant.
 
-## Run on a Kaggle notebook
+## Run on a free cloud notebook
 
-The Android phone is only used to manage the repository and notebook. Training runs on the notebook's assigned GPU.
+The Android phone is only used to open and manage the notebook. Training runs on the cloud GPU.
 
-1. Sign in to Kaggle and create/import a notebook from the file training/ANON_AI_ULTRA_Kaggle.ipynb.
-2. In notebook settings, select **GPU** and enable **Internet**.
-3. Run the cells from top to bottom. The script downloads a small streaming sample, trains a tokenizer and initializes a new model from random weights.
-4. The model output is written under /kaggle/working/anon-ai-ultra-base-30m.
-5. Use Kaggle's notebook Output panel to save/download the resulting model artifact. Keep checkpoints; free GPU sessions can end.
+**Google Colab (quickest from a phone):** open the notebook from GitHub using this link:
+https://colab.research.google.com/github/furkanmeyra2173-create/ANON-AI-ULTRA/blob/main/training/ANON_AI_ULTRA_Kaggle.ipynb
 
-Kaggle free GPU access is limited and availability can vary. A run can queue or stop; resume support is a future improvement.
+**Kaggle:** download the notebook file training/ANON_AI_ULTRA_Kaggle.ipynb from this repository and import it into a new Kaggle notebook.
+
+1. Sign in to Colab or Kaggle.
+2. In Runtime/Notebook settings, choose a GPU runtime and enable Internet access.
+3. Run the cells from top to bottom. The script downloads a bounded text sample, trains a tokenizer and initializes new model weights from random values.
+4. The output is saved in the notebook working directory and packaged as ANON-AI-ULTRA-base-30m.zip.
+5. Download the ZIP from the notebook Files/Output panel before the temporary session ends.
+
+Free GPU availability and session limits are dynamic; neither service guarantees a particular GPU or uninterrupted training. The first run is only a pipeline experiment, and resume support is not complete yet.
 
 ## Dataset and licensing
 
