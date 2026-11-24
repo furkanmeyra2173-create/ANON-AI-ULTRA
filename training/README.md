@@ -59,3 +59,30 @@ If scratch training cannot reach usable quality within the available compute, ev
 - The app continues using its current provider until an ANON model has passed evaluation and Android integration tests.
 - Do not put API keys, access tokens, passwords or private datasets in this repository.
 - A small model trained from scratch is not automatically knowledgeable, safe, aligned or good at coding.
+
+
+## Instruction tuning
+
+After the from-scratch base model exists, prepare your own or appropriately licensed conversation data as JSON Lines. Each line must be one JSON object containing a messages array, for example:
+
+~~~json
+{"messages":[{"role":"user","content":"Merhaba"},{"role":"assistant","content":"Merhaba! Sana nasıl yardımcı olabilirim?"}]}
+~~~
+
+Use at least 10 valid conversations for a technical smoke run; meaningful quality requires substantially more, carefully reviewed examples. The script computes loss only on assistant message content, not on system/user text.
+
+~~~bash
+python training/finetune_instructions.py \
+  --base-model ./anon-ai-ultra-base-30m/final \
+  --dataset-jsonl ./my_turkish_instructions.jsonl \
+  --max-steps 500 \
+  --output-dir ./anon-ai-ultra-chat
+~~~
+
+Then test the result:
+
+~~~bash
+python training/test_chat_model.py --model ./anon-ai-ultra-chat/final
+~~~
+
+Do not use private chat histories or scraped personal data without permission. Keep source, license and attribution information alongside each dataset version.
