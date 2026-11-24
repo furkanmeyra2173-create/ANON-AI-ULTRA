@@ -43,3 +43,7 @@ Firebase Realtime Database includes a no-cost Spark allowance (1 GB stored and 1
 ## Build
 
 GitHub Actions runs `:app:assembleDebug` on pushes to `main` and on manual runs. Download the `ANON-AI-ULTRA-debug` artifact from a successful workflow run.
+
+## Experimental ANON model training
+
+The separate training/ directory contains an experimental Turkish base-model pipeline initialized from random weights, a Kaggle notebook, and setup instructions. This is the start of the ANON-owned model effort; it is not yet a production conversational assistant. The Android app remains on Firebase AI Logic/Gemini until an ANON model passes evaluation and Android integration tests. Read training/README.md before starting a GPU session.
