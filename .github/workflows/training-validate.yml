@@ -1,0 +1,32 @@
+name: Validate ANON model training pipeline
+
+on:
+  push:
+    paths:
+      - "training/**"
+      - ".github/workflows/training-validate.yml"
+  pull_request:
+    paths:
+      - "training/**"
+      - ".github/workflows/training-validate.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check Python syntax
+        run: python -m py_compile training/train_from_scratch.py
+      - name: Validate Kaggle notebook JSON
+        run: python -m json.tool training/ANON_AI_ULTRA_Kaggle.ipynb > /dev/null
+      - name: Check required training artifacts
+        run: |
+          test -s training/README.md
+          test -s training/requirements.txt
+          grep -q 'GPT2LMHeadModel(config)' training/train_from_scratch.py
