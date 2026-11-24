@@ -1,0 +1,43 @@
+name: Validate ANON training pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "training/**/*.py"
+      - "training/**/*.ipynb"
+      - ".github/workflows/validate-anon-training.yml"
+  pull_request:
+    paths:
+      - "training/**/*.py"
+      - "training/**/*.ipynb"
+      - ".github/workflows/validate-anon-training.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile training scripts
+        run: python -m py_compile training/*.py
+      - name: Validate Colab notebook JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          notebook_path = Path("training/ANON_AI_ULTRA_SFT_Colab.ipynb")
+          notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+          assert notebook.get("nbformat") == 4
+          assert notebook.get("cells"), "Notebook contains no cells"
+          print(f"Notebook valid: {len(notebook['cells'])} cells")
+          PY
