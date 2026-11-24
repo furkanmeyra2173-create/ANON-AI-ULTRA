@@ -32,9 +32,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-model", required=True)
     parser.add_argument("--dataset-jsonl", required=True)
     parser.add_argument("--output-dir", default="./anon-ai-ultra-chat")
-    parser.add_argument("--max-samples", type=int, default=50000)
+    parser.add_argument("--max-samples", type=int, default=20000)
     parser.add_argument("--max-length", type=int, default=512)
-    parser.add_argument("--max-steps", type=int, default=500)
+    parser.add_argument("--max-steps", type=int, default=800)
+    parser.add_argument("--eval-ratio", type=float, default=0.05)
+    parser.add_argument("--eval-steps", type=int, default=50)
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
+    parser.add_argument("--learning-rate", type=float, default=2e-5)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -65,10 +70,10 @@ def read_messages(path: Path, limit: int) -> list[dict[str, Any]]:
             if len(records) >= limit:
                 break
 
-    if len(records) < 10:
+    if len(records) < 20:
         raise RuntimeError(
             f"Only {len(records)} valid conversations found. "
-            "Provide at least 10 JSONL rows with a messages array."
+            "Provide at least 20 JSONL rows for a train/evaluation split."
         )
     return records
 
@@ -78,10 +83,9 @@ def prepare_example(
     tokenizer,
     max_length: int,
 ) -> dict[str, list[int]] | None:
-    input_ids: list[int] = []
-    labels: list[int] = []
+    """Encode messages and retain the newest complete message window that fits."""
+    chunks: list[tuple[str, list[int], list[int]]] = []
     eos_id = tokenizer.eos_token_id
-
     for item in messages:
         if not isinstance(item, dict):
             continue
@@ -91,18 +95,27 @@ def prepare_example(
             continue
 
         marker_id = tokenizer.convert_tokens_to_ids(ROLE_TOKENS[role])
+        if marker_id is None or marker_id == tokenizer.unk_token_id:
+            continue
         content_ids = tokenizer.encode(content.strip(), add_special_tokens=False)
         message_ids = [marker_id] + content_ids + [eos_id]
-        input_ids.extend(message_ids)
-
         if role == "assistant":
-            labels.extend([-100] + content_ids + [eos_id])
+            message_labels = [-100] + content_ids + [eos_id]
         else:
-            labels.extend([-100] * len(message_ids))
+            message_labels = [-100] * len(message_ids)
+        chunks.append((role, message_ids, message_labels))
 
-    if not input_ids or not any(label != -100 for label in labels):
+    while chunks and sum(len(chunk[1]) for chunk in chunks) > max_length:
+        chunks.pop(0)
+
+    if not chunks:
         return None
-    if len(input_ids) > max_length:
+    if not any(role == "user" for role, _, _ in chunks):
+        return None
+
+    input_ids = [token for _, ids, _ in chunks for token in ids]
+    labels = [token for _, _, target in chunks for token in target]
+    if not any(label != -100 for label in labels):
         return None
 
     return {
@@ -114,12 +127,19 @@ def prepare_example(
 
 def main() -> None:
     args = parse_args()
+    if not 0.01 <= args.eval_ratio <= 0.3:
+        raise ValueError("--eval-ratio must be between 0.01 and 0.3")
     if args.max_length < 64 or args.max_length > 2048:
         raise ValueError("--max-length must be between 64 and 2048")
-    if args.max_steps < 1:
-        raise ValueError("--max-steps must be at least 1")
+    if args.max_steps < 1 or args.eval_steps < 1:
+        raise ValueError("--max-steps and --eval-steps must be at least 1")
+    if args.batch_size < 1 or args.gradient_accumulation_steps < 1:
+        raise ValueError("Batch and gradient-accumulation sizes must be positive")
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+    )
     set_seed(args.seed)
 
     base_dir = Path(args.base_model).resolve()
@@ -150,14 +170,21 @@ def main() -> None:
         if item is not None:
             prepared.append(item)
 
-    if len(prepared) < 10:
+    if len(prepared) < 20:
         raise RuntimeError(
-            "Fewer than 10 conversations fit the selected context length. "
-            "Clean the data or increase --max-length."
+            f"Only {len(prepared)} conversations fit max-length={args.max_length}. "
+            "Increase --max-length or inspect the source data."
         )
 
-    train_dataset = Dataset.from_list(prepared)
-    LOG.info("Prepared %s instruction conversations", len(train_dataset))
+    dataset = Dataset.from_list(prepared)
+    split = dataset.train_test_split(test_size=args.eval_ratio, seed=args.seed)
+    train_dataset = split["train"]
+    eval_dataset = split["test"]
+    LOG.info(
+        "Prepared %s training and %s evaluation conversations",
+        len(train_dataset),
+        len(eval_dataset),
+    )
 
     def collate(features: list[dict[str, list[int]]]) -> dict[str, torch.Tensor]:
         max_len = max(len(feature["input_ids"]) for feature in features)
@@ -175,29 +202,39 @@ def main() -> None:
             "labels": torch.tensor(batch_labels, dtype=torch.long),
         }
 
+    eval_steps = min(args.eval_steps, args.max_steps)
     training_args = TrainingArguments(
         output_dir=str(output_dir / "checkpoints"),
         max_steps=args.max_steps,
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=4,
-        learning_rate=5e-5,
-        warmup_steps=min(50, max(5, args.max_steps // 10)),
+        per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        learning_rate=args.learning_rate,
+        warmup_steps=min(50, args.max_steps // 10),
         lr_scheduler_type="cosine",
         logging_steps=10,
-        save_steps=100,
+        eval_strategy="steps",
+        eval_steps=eval_steps,
+        save_strategy="steps",
+        save_steps=eval_steps,
         save_total_limit=2,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
         fp16=torch.cuda.is_available(),
         bf16=False,
         gradient_checkpointing=True,
         dataloader_num_workers=0,
         report_to="none",
         optim="adamw_torch",
+        max_grad_norm=1.0,
         seed=args.seed,
     )
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         data_collator=collate,
         processing_class=tokenizer,
     )
@@ -206,15 +243,29 @@ def main() -> None:
     trainer.save_model(str(final_dir))
     tokenizer.save_pretrained(final_dir)
 
+    source_metadata_path = data_path.with_suffix(data_path.suffix + ".metadata.json")
+    source_metadata = {}
+    if source_metadata_path.is_file():
+        try:
+            source_metadata = json.loads(source_metadata_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            LOG.warning("Could not parse dataset metadata sidecar.")
+
     metadata = {
         "model_type": "ANON instruction-tuned checkpoint",
         "base_model": str(base_dir),
         "dataset_file": data_path.name,
-        "conversations_used": len(train_dataset),
+        "dataset_metadata": source_metadata,
+        "conversations_total": len(dataset),
+        "conversations_train": len(train_dataset),
+        "conversations_eval": len(eval_dataset),
         "max_length": args.max_length,
         "max_steps": args.max_steps,
+        "eval_ratio": args.eval_ratio,
         "train_loss": result.metrics.get("train_loss"),
         "assistant_only_loss": True,
+        "best_eval_loss": trainer.state.best_metric,
+        "warning": "Experimental; evaluate quality and safety before deployment.",
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "sft_metadata.json").write_text(
