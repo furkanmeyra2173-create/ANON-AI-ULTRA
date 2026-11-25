@@ -31,6 +31,12 @@ After the initial run, download `ANON-AI-ULTRA-base-30m.zip`.
 
 https://colab.research.google.com/github/furkanmeyra2173-create/ANON-AI-ULTRA/blob/main/training/ANON_AI_ULTRA_SFT_Colab.ipynb
 
+**Checkpoint test notebook (no retraining):**
+
+https://colab.research.google.com/github/furkanmeyra2173-create/ANON-AI-ULTRA/blob/main/training/ANON_AI_ULTRA_Test_Colab.ipynb
+
+The test notebook checks tokenizer/model vocabulary sizes, the three chat-marker tokens and Turkish text round-tripping before generation. Inference uses the same message prefix as SFT: `<|user|>{question}<|eos|><|assistant|>` (where `<|eos|>` is the tokenizer's configured EOS token). Do not add literal backslash-n text or a different chat template.
+
 1. Open the second notebook and select a GPU runtime.
 2. Run the cells from top to bottom.
 3. When asked, upload the `ANON-AI-ULTRA-base-30m.zip` downloaded from the first notebook.
