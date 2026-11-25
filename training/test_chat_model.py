@@ -38,10 +38,9 @@ def main() -> None:
         if not question:
             continue
 
-        prompt = (
-            "<|user|>\n" + question + "\n" + tokenizer.eos_token
-            + "\n<|assistant|>\n"
-        )
+        # Match the exact sequence used by finetune_instructions.py:
+        # <|user|> + user text + EOS + <|assistant|>
+        prompt = "<|user|>" + question + tokenizer.eos_token + "<|assistant|>"
         inputs = tokenizer(prompt, return_tensors="pt").to(device)
         with torch.inference_mode():
             output = model.generate(
