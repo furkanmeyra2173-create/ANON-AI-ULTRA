@@ -323,10 +323,9 @@ def main() -> None:
         "warning": "Experimental; evaluate quality and safety before deployment.",
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "sft_metadata.json").write_text(
-        json.dumps(metadata, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    metadata_json = json.dumps(metadata, ensure_ascii=False, indent=2)
+    (output_dir / "sft_metadata.json").write_text(metadata_json, encoding="utf-8")
+    (final_dir / "sft_metadata.json").write_text(metadata_json, encoding="utf-8")
     LOG.info("Instruction-tuned model saved to %s", final_dir)
 
 
