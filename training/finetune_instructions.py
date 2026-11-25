@@ -83,9 +83,12 @@ def prepare_example(
     tokenizer,
     max_length: int,
 ) -> dict[str, list[int]] | None:
-    """Encode messages and retain the newest complete message window that fits."""
-    chunks: list[tuple[str, list[int], list[int]]] = []
+    """Encode a complete conversation ending in an assistant answer."""
     eos_id = tokenizer.eos_token_id
+    if eos_id is None:
+        raise ValueError("Tokenizer must define eos_token_id before SFT.")
+
+    chunks: list[tuple[str, list[int], list[int]]] = []
     for item in messages:
         if not isinstance(item, dict):
             continue
@@ -105,12 +108,23 @@ def prepare_example(
             message_labels = [-100] * len(message_ids)
         chunks.append((role, message_ids, message_labels))
 
+    # Train only on complete examples whose final retained message is an
+    # assistant answer and which contain a user message before that answer.
+    last_assistant = max(
+        (index for index, chunk in enumerate(chunks) if chunk[0] == "assistant"),
+        default=-1,
+    )
+    if last_assistant < 0:
+        return None
+    chunks = chunks[: last_assistant + 1]
+
+    # Remove oldest complete messages until the remaining conversation fits.
     while chunks and sum(len(chunk[1]) for chunk in chunks) > max_length:
         chunks.pop(0)
 
-    if not chunks:
+    if not chunks or chunks[-1][0] != "assistant":
         return None
-    if not any(role == "user" for role, _, _ in chunks):
+    if not any(role == "user" for role, _, _ in chunks[:-1]):
         return None
 
     input_ids = [token for _, ids, _ in chunks for token in ids]
@@ -151,17 +165,58 @@ def main() -> None:
         raise FileNotFoundError(f"Instruction dataset not found: {data_path}")
 
     tokenizer = AutoTokenizer.from_pretrained(str(base_dir))
-    new_tokens = [
+    if tokenizer.eos_token_id is None:
+        raise ValueError("Tokenizer has no eos_token_id; this checkpoint cannot be SFT-trained safely.")
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
+
+    # Role markers must be registered as special tokens, not merely split into
+    # ordinary subword pieces. Keep existing special tokens and add only misses.
+    missing_role_tokens = [
         token for token in ROLE_TOKENS.values()
-        if token not in tokenizer.get_vocab()
+        if token not in tokenizer.all_special_tokens
     ]
-    if new_tokens:
-        tokenizer.add_special_tokens({"additional_special_tokens": new_tokens})
+    if missing_role_tokens:
+        existing_additional = list(tokenizer.additional_special_tokens)
+        tokenizer.add_special_tokens({
+            "additional_special_tokens": existing_additional + missing_role_tokens
+        })
+
+    for role, marker in ROLE_TOKENS.items():
+        marker_ids = tokenizer.encode(marker, add_special_tokens=False)
+        if len(marker_ids) != 1 or marker_ids[0] == tokenizer.unk_token_id:
+            raise ValueError(
+                f"Chat marker {marker!r} for role {role!r} is not one dedicated token: {marker_ids}"
+            )
+
+    # A cheap tokenizer round-trip catches malformed vocab/decoder files before
+    # spending GPU time on training.
+    probe = "Türkçe karakter testi: ğüşiöç İı"
+    probe_ids = tokenizer.encode(probe, add_special_tokens=False)
+    if tokenizer.decode(probe_ids, skip_special_tokens=False) != probe:
+        raise ValueError("Tokenizer failed the Turkish UTF-8 round-trip check.")
 
     model = AutoModelForCausalLM.from_pretrained(str(base_dir))
-    if new_tokens:
+    embedding_rows = model.get_input_embeddings().num_embeddings
+    if embedding_rows != len(tokenizer):
+        LOG.warning(
+            "Resizing token embeddings from %s to tokenizer length %s",
+            embedding_rows, len(tokenizer)
+        )
         model.resize_token_embeddings(len(tokenizer))
+    model.config.vocab_size = len(tokenizer)
+    model.config.pad_token_id = tokenizer.pad_token_id
+    model.config.eos_token_id = tokenizer.eos_token_id
     model.config.use_cache = False
+
+    LOG.info(
+        "Tokenizer/model checks passed | vocab=%s | pad=%s | eos=%s | role_ids=%s",
+        len(tokenizer),
+        tokenizer.pad_token_id,
+        tokenizer.eos_token_id,
+        {role: tokenizer.convert_tokens_to_ids(marker) for role, marker in ROLE_TOKENS.items()},
+    )
 
     records = read_messages(data_path, args.max_samples)
     prepared = []
